@@ -46,6 +46,7 @@ class _AssistantScreenState extends State<AssistantScreen>
   String _partialTranscript = '';
   bool _isFullyInitialized = false;
   bool _hotwordEnabled = false;
+  String? _capturedImage;
 
   @override
   void initState() {
@@ -147,20 +148,22 @@ class _AssistantScreenState extends State<AssistantScreen>
 
     debugPrint('[Pipeline] Wake word triggered');
 
-    // Pause hotword engine
     if (_hotwordEnabled) await _hotword.pause();
 
-    // Clear all previous data immediately
     setState(() {
       _partialTranscript = '';
       _lastQuestion = '';
+      _capturedImage = null;
     });
 
-    // Move to listening state FIRST so the UI updates
     _updateState(AssistantState.listening, 'Listening...');
 
-    // Start speech recognition immediately — no delay
-    
+    // Capture image RIGHT NOW while the user is still pointing the camera
+    _vision.captureBase64Frame().then((img) {
+      _capturedImage = img;
+      debugPrint('[Pipeline] Image pre-captured');
+    });
+
     bool questionSent = false;
 
     await _stt.startListening(
@@ -170,17 +173,13 @@ class _AssistantScreenState extends State<AssistantScreen>
 
         if (isFinal && text.isNotEmpty && !questionSent) {
           questionSent = true;
-          
           _onQuestionReceived(text);
         }
       },
       onDone: () {
         debugPrint('[Pipeline] STT done | partial: "$_partialTranscript" | questionSent: $questionSent');
-        // Only handle "no speech" if we never got a final result
-        // AND we're still in listening state
         if (!questionSent && _state == AssistantState.listening) {
           if (_partialTranscript.isNotEmpty) {
-            // We heard something but it never became "final" — use it anyway
             questionSent = true;
             _onQuestionReceived(_partialTranscript);
           } else {
@@ -194,8 +193,7 @@ class _AssistantScreenState extends State<AssistantScreen>
   /// Stage 2: User's question is transcribed.
   void _onQuestionReceived(String question) async {
     debugPrint('[Pipeline] Question received: "$question" | State: $_state');
-    
-    // Ignore if we're not in listening state (stale callback)
+
     if (_state != AssistantState.listening) {
       debugPrint('[Pipeline] Ignoring stale question');
       return;
@@ -206,29 +204,22 @@ class _AssistantScreenState extends State<AssistantScreen>
       _partialTranscript = '';
     });
 
-    // Play processing chime
-    await _audio.playProcessingChime();
-    _updateState(AssistantState.processing, 'Looking...');
+    _updateState(AssistantState.processing, 'Thinking...');
 
-    // Capture camera frame
-    final imageBase64 = await _vision.captureBase64Frame();
+    // Use pre-captured image, or capture now as fallback
+    final imageBase64 = _capturedImage ?? await _vision.captureBase64Frame();
 
     if (imageBase64 == null) {
-      await _tts.speak(
-        'Sorry, I could not capture an image. Please try again.',
-      );
+      await _tts.speak('Sorry, I could not capture an image. Please try again.');
       _resetToIdle();
       return;
     }
 
-    // Send to GPT-4o
-    _updateState(AssistantState.processing, 'Thinking...');
     final answer = await _llm.askAboutImage(
       question: question,
       imageBase64: imageBase64,
     );
 
-    // Speak the answer
     _onAnswerReceived(answer);
   }
 
