@@ -1,0 +1,53 @@
+name: visual_assistant
+description: AI-powered visual assistant for the visually impaired. Ask questions about your surroundings using voice.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Wake word detection — always-on, on-device
+  porcupine_flutter: ^3.0.2
+
+  # Speech-to-text — listens after wake word fires
+  speech_to_text: ^7.3.0
+
+  # Camera — silent rear camera snapshot
+  camera: ^0.11.0+2
+
+  # Text-to-speech — speaks the GPT-4o answer
+  flutter_tts: ^4.0.2
+
+  # HTTP client for GPT-4o API calls
+  http: ^1.2.1
+
+  # Runtime permissions (mic, camera)
+  permission_handler: ^11.3.1
+
+  # Audio feedback (beeps, chimes)
+  audioplayers: ^6.0.0
+
+  # Keep screen awake while app is running
+  wakelock_plus: ^1.2.5
+
+  # Load .env file for API keys
+  flutter_dotenv: ^5.1.0
+
+  # Image encoding
+  image: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
+    - assets/sounds/
