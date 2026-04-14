@@ -39,6 +39,7 @@ dependencies:
 
   # Image encoding
   image: ^4.2.0
+  flutter_android_volume_keydown: ^1.0.1
 
 dev_dependencies:
   flutter_test:

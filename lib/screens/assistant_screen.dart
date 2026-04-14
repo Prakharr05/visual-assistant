@@ -10,6 +10,8 @@ import '../services/llm_service.dart';
 import '../services/tts_service.dart';
 import '../services/audio_feedback_service.dart';
 import '../widgets/status_indicator.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 
 /// The main screen. No buttons to tap — everything is voice-triggered.
 ///
@@ -47,6 +49,7 @@ class _AssistantScreenState extends State<AssistantScreen>
   bool _isFullyInitialized = false;
   bool _hotwordEnabled = false;
   String? _capturedImage;
+  StreamSubscription? _volumeSub;
 
   @override
   void initState() {
@@ -63,6 +66,12 @@ class _AssistantScreenState extends State<AssistantScreen>
 
     // Wire up the wake word callback
     _hotword.onWakeWordDetected = _onWakeWord;
+
+    // Listen for volume button press as hands-free trigger
+    const volumeChannel = EventChannel('volume_key_channel');
+    _volumeSub = volumeChannel.receiveBroadcastStream().listen((event) {
+      _onWakeWord();
+    });
 
     // Start initialization
     _initializeAll();
@@ -284,6 +293,7 @@ class _AssistantScreenState extends State<AssistantScreen>
 
   @override
   void dispose() {
+    _volumeSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _hotword.dispose();
     _vision.dispose();
