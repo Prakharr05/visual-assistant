@@ -35,7 +35,7 @@ class VisionService {
 
       _controller = CameraController(
         rearCamera,
-        ResolutionPreset.medium, // 720p — good enough for GPT-4o, fast to encode
+        ResolutionPreset.veryHigh, // 720p — good enough for GPT-4o, fast to encode
         enableAudio: false, // no shutter sound
         imageFormatGroup: ImageFormatGroup.jpeg,
       );

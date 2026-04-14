@@ -150,6 +150,9 @@ class _AssistantScreenState extends State<AssistantScreen>
 
     if (_hotwordEnabled) await _hotword.pause();
 
+    // Cancel any leftover STT session
+    await _stt.cancel();
+
     setState(() {
       _partialTranscript = '';
       _lastQuestion = '';
@@ -252,7 +255,6 @@ class _AssistantScreenState extends State<AssistantScreen>
         : 'Tap the mic button to ask a question';
     _updateState(AssistantState.idle, idleText);
     _partialTranscript = '';
-    _lastQuestion = '';
     if (_hotwordEnabled) await _hotword.resume();
   }
 
@@ -292,123 +294,287 @@ class _AssistantScreenState extends State<AssistantScreen>
 
   // ─── UI ───────────────────────────────────────────────────────────
 
+  Color _stateAccentColor() {
+    switch (_state) {
+      case AssistantState.idle:
+        return const Color(0xFF3B82F6);
+      case AssistantState.listening:
+        return const Color(0xFF22C55E);
+      case AssistantState.processing:
+        return const Color(0xFFF59E0B);
+      case AssistantState.speaking:
+        return const Color(0xFF8B5CF6);
+      case AssistantState.error:
+        return const Color(0xFFEF4444);
+    }
+  }
+
+  IconData _stateIcon() {
+    switch (_state) {
+      case AssistantState.idle:
+        return Icons.mic_none_rounded;
+      case AssistantState.listening:
+        return Icons.graphic_eq_rounded;
+      case AssistantState.processing:
+        return Icons.visibility_rounded;
+      case AssistantState.speaking:
+        return Icons.volume_up_rounded;
+      case AssistantState.error:
+        return Icons.error_outline_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accent = _stateAccentColor();
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Camera preview (small, top of screen — for sighted observers)
-            if (_vision.isInitialized && _vision.controller != null)
-              Container(
-                height: 200,
-                margin: const EdgeInsets.all(16),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
-                    width: 1,
-                  ),
-                ),
-                child: CameraPreview(_vision.controller!),
-              ),
-
-            // Main status area (center of screen)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: StatusIndicator(
-                    state: _state,
-                    statusText: _statusText,
-                  ),
-                ),
-              ),
-            ),
-
-            // Transcript and answer display (bottom — for demos)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Show partial transcript while listening
-                  if (_partialTranscript.isNotEmpty) ...[
-                    Text(
-                      'Hearing: $_partialTranscript',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.5),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-
-                  // Last question
-                  if (_lastQuestion.isNotEmpty) ...[
-                    Text(
-                      'Q: $_lastQuestion',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-
-                  // Last answer
-                  if (_lastAnswer.isNotEmpty)
-                    Text(
-                      'A: $_lastAnswer',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: Colors.white,
-                      ),
-                      maxLines: 5,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                  // Empty state
-                  if (_lastQuestion.isEmpty && _partialTranscript.isEmpty)
-                    Text(
-                      'Your conversation will appear here',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.3),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      // Manual trigger button (tap anywhere fallback)
-      floatingActionButton: _state == AssistantState.idle
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 65),
-              child: FloatingActionButton.large(
-                onPressed: _onWakeWord,
-                backgroundColor: const Color(0xFF1A73E8),
-                tooltip: 'Tap to ask a question',
-                child: const Icon(Icons.mic, size: 36),
-              ),
+      backgroundColor: const Color(0xFF000000),
+      body: Stack(
+        children: [
+          // ── Layer 1: Full-screen camera viewfinder ──
+          if (_vision.isInitialized && _vision.controller != null)
+            Positioned.fill(
+              child: CameraPreview(_vision.controller!),
             )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+          else
+            Positioned.fill(
+              child: Container(color: const Color(0xFF0A0A0A)),
+            ),
+
+          // ── Layer 2: Gradient overlay for readability ──
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.transparent,
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.85),
+                  ],
+                  stops: const [0.0, 0.15, 0.5, 0.85],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Layer 3: Top status bar ──
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 12,
+            left: 20,
+            right: 20,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: accent,
+                          boxShadow: [
+                            BoxShadow(color: accent.withOpacity(0.6), blurRadius: 6),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Visual Assistant',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withOpacity(0.9),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: accent.withOpacity(0.3), width: 0.5),
+                  ),
+                  child: Text(
+                    _statusText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Layer 4: Center state indicator (shows during non-idle states) ──
+          if (_state != AssistantState.idle)
+            Center(
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black.withOpacity(0.5),
+                  border: Border.all(color: accent.withOpacity(0.5), width: 2),
+                ),
+                child: Icon(
+                  _stateIcon(),
+                  size: 40,
+                  color: accent,
+                ),
+              ),
+            ),
+
+          // ── Layer 5: Conversation panel at bottom ──
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 200),
+              padding: EdgeInsets.fromLTRB(20, 16, 20, bottomPadding + 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111111).withOpacity(0.92),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(
+                  top: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.5),
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_partialTranscript.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _partialTranscript,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: const Color(0xFF22C55E).withOpacity(0.8),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+
+                    if (_lastQuestion.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Q  ',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withOpacity(0.4),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                _lastQuestion,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withOpacity(0.7),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (_lastAnswer.isNotEmpty)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('A  ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: accent.withOpacity(0.6),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              _lastAnswer,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withOpacity(0.9),
+                                height: 1.5,
+                              ),
+                              maxLines: 6,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                    if (_partialTranscript.isEmpty && _lastQuestion.isEmpty && _lastAnswer.isEmpty)
+                      Center(
+                        child: Text(
+                          _state == AssistantState.idle ? 'Tap the mic to ask a question' : _statusText,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Layer 6: Mic button — ALWAYS in same position ──
+          Positioned(
+            bottom: bottomPadding + 210,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: _state == AssistantState.idle ? _onWakeWord : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _state == AssistantState.idle
+                        ? accent
+                        : accent.withOpacity(0.3),
+                    boxShadow: _state == AssistantState.idle
+                        ? [BoxShadow(color: accent.withOpacity(0.4), blurRadius: 20, spreadRadius: 2)]
+                        : [],
+                  ),
+                  child: Icon(
+                    _stateIcon(),
+                    size: 38,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
